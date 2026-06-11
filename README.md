@@ -149,3 +149,5 @@ pip install fastapi uvicorn catboost rdkit numpy pandas scikit-learn matplotlib 
 4. Launch Portal: python src/app.py
 
 Navigate to http://127.0.0.1:8000/ to access the responsive lead optimization dashboard.
+
+### Credits: Created by Arshia K ([Github: ArshiaA99](https://github.com/ArshiaA99))
