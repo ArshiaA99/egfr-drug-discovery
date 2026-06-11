@@ -1,6 +1,7 @@
 import time
 import pandas as pd
 import requests
+from pathlib import Path
 
 
 class ChEMBLDataExtractor:
@@ -90,10 +91,12 @@ class ChEMBLDataExtractor:
 
 
 if __name__ == "__main__":
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    output_path = str(BASE_DIR / "data" / "egfr_raw_data.csv")
+    
     extractor = ChEMBLDataExtractor(target_id="CHEMBL203")
     raw_payload = extractor.fetch_raw_data()
     cleaned_df = extractor.clean_records(raw_payload)
 
-    output_path = "egfr_raw_data.csv"
     cleaned_df.to_csv(output_path, index=False)
     print(f"💾 Saved raw dataset artifact to '{output_path}'")
