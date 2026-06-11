@@ -64,22 +64,23 @@ def predict_potency(payload: PredictionRequest):
     if features is None:
         raise HTTPException(status_code=400, detail="Invalid chemical SMILES structure parsing string.")
     
-    # --- APPLICABILITY DOMAIN STRUCTURAL GUARDRAIL ---
+    # --- DEBUG & ADJUST GUARDRAIL ---
     if REFERENCE_FPS:
-        # Compute maximum similarity against training library using fast vector math
         similarities = DataStructs.BulkTanimotoSimilarity(query_fp, REFERENCE_FPS)
         max_similarity = max(similarities)
         
-        # 0.35 is the standard threshold for structural relevance in drug screening
-        if max_similarity < 0.35:
+        # This will print directly to your terminal every time you hit "Analyze"
+        print(f"🧪 DEBUG | SMILES: {payload.smiles[:30]}... | Max Tanimoto Similarity: {max_similarity:.4f}")
+        
+        # Tightened threshold from 0.35 to 0.48
+        if max_similarity < 0.48:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Out of Applicability Domain (Max Tanimoto: {max_similarity:.2f}). "
-                       f"This compound is structurally too distant from known EGFR training structures."
+                       f"This structure does not match the repository's oncology profile."
             )
     # -------------------------------------------------
 
-    # Inference execution
     pIC50 = float(model.predict(features)[0])
     ic50_nm = 10 ** (9 - pIC50)
     
@@ -100,7 +101,6 @@ def predict_potency(payload: PredictionRequest):
         "status": status,
         "color_class": color
     }
-
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
     """Serves a professional, dark bioinformatics dashboard interface."""
