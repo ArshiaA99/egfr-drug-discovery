@@ -5,7 +5,10 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from rdkit import Chem
 from rdkit.Chem import Descriptors, AllChem
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = str(BASE_DIR / "models" / "catboost_egfr_model.cbm")
 # Initialize core FastAPI instance
 app = FastAPI(
     title="EGFR Potency Engine",
@@ -14,7 +17,6 @@ app = FastAPI(
 )
 
 # Load the optimized model artifact
-MODEL_PATH = "catboost_egfr_model.cbm"
 model = CatBoostRegressor()
 model.load_model(MODEL_PATH)
 
