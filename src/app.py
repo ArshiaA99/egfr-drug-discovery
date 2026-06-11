@@ -1,57 +1,88 @@
 import numpy as np
+import pandas as pd
 from catboost import CatBoostRegressor
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from rdkit import Chem
+from rdkit import Chem, DataStructs
 from rdkit.Chem import Descriptors, AllChem
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_PATH = str(BASE_DIR / "models" / "catboost_egfr_model.cbm")
 # Initialize core FastAPI instance
 app = FastAPI(
     title="EGFR Potency Engine",
-    description="Production API for Human EGFR bioactivity predictions.",
-    version="1.0.0"
+    description="Production API for Human EGFR bioactivity predictions with Tanimoto Safeguards.",
+    version="1.1.0"
 )
 
-# Load the optimized model artifact
+# Core Path Setup
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_PATH = str(BASE_DIR / "models" / "catboost_egfr_model.cbm")
+DATA_PATH = str(BASE_DIR / "data" / "egfr_processed_data.csv")
+
+# 1. Load the optimized model artifact
+print("🤖 Loading CatBoost Regressor weights...")
 model = CatBoostRegressor()
 model.load_model(MODEL_PATH)
+
+# 2. Build the Applicability Domain reference fingerprints on startup
+print("🧱 Indexing training dataset for structural similarity checks...")
+try:
+    training_df = pd.read_csv(DATA_PATH)
+    REFERENCE_FPS = []
+    for smiles in training_df["canonical_smiles"]:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol:
+            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=1024)
+            REFERENCE_FPS.append(fp)
+    print(f"✨ Successfully cached {len(REFERENCE_FPS)} reference molecular structures.")
+except Exception as e:
+    print(f"⚠️ Warning: Could not build structural guardrails library: {e}")
+    REFERENCE_FPS = []
 
 class PredictionRequest(BaseModel):
     smiles: str
 
-def extract_features_from_smiles(smiles: str) -> np.ndarray:
-    """Transforms a raw SMILES string into the exact 1026-feature vector expected by the model."""
+def extract_features_from_smiles(smiles: str) -> tuple:
+    """Transforms raw SMILES into features and returns the query fingerprint for similarity checks."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return None
+        return None, None
         
-    # Generate 1024 structural features
     fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=1024)
     fp_array = list(np.array(fp))
     
-    # Append the 2 optimized physical features
     mol_wt = Descriptors.MolWt(mol)
     log_p = Descriptors.MolLogP(mol)
     
-    # Combine into unified 1026 feature row
     full_vector = fp_array + [mol_wt, log_p]
-    return np.array(full_vector).reshape(1, -1)
+    return np.array(full_vector).reshape(1, -1), fp
 
 @app.post("/predict")
 def predict_potency(payload: PredictionRequest):
-    features = extract_features_from_smiles(payload.smiles)
+    features, query_fp = extract_features_from_smiles(payload.smiles)
     if features is None:
         raise HTTPException(status_code=400, detail="Invalid chemical SMILES structure parsing string.")
+    
+    # --- APPLICABILITY DOMAIN STRUCTURAL GUARDRAIL ---
+    if REFERENCE_FPS:
+        # Compute maximum similarity against training library using fast vector math
+        similarities = DataStructs.BulkTanimotoSimilarity(query_fp, REFERENCE_FPS)
+        max_similarity = max(similarities)
         
+        # 0.35 is the standard threshold for structural relevance in drug screening
+        if max_similarity < 0.35:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Out of Applicability Domain (Max Tanimoto: {max_similarity:.2f}). "
+                       f"This compound is structurally too distant from known EGFR training structures."
+            )
+    # -------------------------------------------------
+
     # Inference execution
     pIC50 = float(model.predict(features)[0])
     ic50_nm = 10 ** (9 - pIC50)
     
-    # Categorize binding affinity
     if pIC50 >= 7.0:
         status = "Highly Potent Candidate (Strong Target Inactivation)"
         color = "text-emerald-400"
@@ -186,5 +217,5 @@ def serve_dashboard():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 Starting local web server...")
+    print("🚀 Starting localized web server...")
     uvicorn.run(app, host="127.0.0.1", port=8000)
