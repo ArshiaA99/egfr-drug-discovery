@@ -37,10 +37,10 @@ The compounds modeled by this engine are **Small-Molecule Tyrosine Kinase Inhibi
 ### 1. Data Ingestion & Biological Constraints
 Raw bioactivity data is queried dynamically from the EMBL-EBI ChEMBL database using the target ID `CHEMBL203`. To eliminate experimental noise, the extraction engine enforces strict filtration:
 * **Assay Uniformity:** Only compounds with explicitly defined $IC_{50}$ values measured in nanomolar (nM) concentrations are ingested.
-* **Mathematical Standardization:** Standard concentrations are converted to the logarithmic $pIC_{50}$ scale:
-    $$pIC_{50} = -\log_{10}(\text{standard\_value} \times 10^{-9})$$
-    This linearizes the data, transforming highly skewed exponential concentrations into a balanced scale where a value of 9.0 represents 1 nM potency, 6.0 represents 1 µM potency, and values below 5.0 indicate weak or inactive structures.
+* **Mathematical Standardization:**  Standard concentrations are converted to the logarithmic $pIC_{50}$ scale. The conversion is calculated as follows:
+$pIC_{50} = -\log_{10}(\text{standard value} \times 10^{-9})$
 
+  This linearizes the data, transforming highly skewed exponential concentrations into a balanced scale where a value of 9.0 represents 1 nM potency, 6.0 represents 1 µM potency, and values below 5.0 indicate weak or inactive structures.
 ### 2. High-Dimensional Molecular Featurization
 Computers cannot interpret raw chemical strings (SMILES notation). The preprocessor transforms them into a unified **1,026-dimensional mathematical feature vector**:
 
@@ -121,28 +121,31 @@ Ligand-based 2D QSAR (Quantitative Structure-Activity Relationship) models are h
 ### The Out-of-Distribution (OOD) Phenomenon
 Because public drug-discovery assays primarily document molecules that bind reasonably well, training data suffers from an inherent lack of "true negatives" (e.g., common household chemicals). Because decision tree models cannot extrapolate, arbitrary inputs default directly to the training median, resulting in false positives for completely benign compounds like Caffeine or Aspirin.
 
-The Imatinib Paradox
+### The Imatinib Paradox
 During testing, the leukemia drug Imatinib (Gleevec) returns a high predicted potency against EGFR. This behavior highlights the distinction between 2D topology and 3D biochemistry:
 * Imatinib is a tyrosine kinase inhibitor designed for the BCR-ABL protein sequence.
 * Because BCR-ABL and EGFR belong to the exact same kinase superfamily, they share highly similar ATP-binding pocket structures. Consequently, the core chemical scaffolds designed to fit them look almost identical on a flat 2D fingerprint map.
 * The model correctly recognizes Imatinib as a high-potency kinase binder, but lacks the 3D spatial or spatial-conformation awareness required to detect that Imatinib does not fit perfectly into the specific shape of the EGFR pocket.
 
-## Structural Guardrails (Tanimoto Filter)
+### Structural Guardrails (Tanimoto Filter)
 To enforce an operational boundary, the FastAPI layer computes a live Tanimoto Coefficient vector across the entire query space on startup:
 ```python
 similarities = DataStructs.BulkTanimotoSimilarity(query_fp, REFERENCE_FPS)
 ```
 If an incoming string fails to meet a maximum similarity threshold of 0.48 against the verified training array, the engine flags the compound as outside the model's Applicability Domain and safely blocks the request before inference execution.
 
-### 🚀 Local Deployment Integration
-## Prerequisites
+---
+
+## 🚀 Local Deployment Integration
+### Prerequisites
 Ensure your environment contains the required C-compiled chemical informatics dependencies:
 ```bash
 pip install fastapi uvicorn catboost rdkit numpy pandas scikit-learn matplotlib seaborn
 ```
-## Execution
+### Execution
 1. Extract Data: python src/data_extraction.py
 2. Process Features: python src/preprocess.py
 3. Train Engine: python src/pipeline.py
 4. Launch Portal: python src/app.py
-# Navigate to http://127.0.0.1:8000/ to access the responsive lead optimization dashboard.
+
+Navigate to http://127.0.0.1:8000/ to access the responsive lead optimization dashboard.
