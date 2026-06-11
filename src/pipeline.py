@@ -1,3 +1,4 @@
+from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -5,8 +6,8 @@ import seaborn as sns
 from catboost import CatBoostRegressor
 from rdkit import Chem
 from rdkit.Chem import Descriptors
+from rdkit.Chem.Scaffolds import MurckoScaffold
 from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
 
 
 class CatBoostDrugModel:
@@ -29,6 +30,7 @@ class CatBoostDrugModel:
     def engineer_features(self, data):
         """Calculates molecular properties and extracts the complete feature matrix."""
         print("🧪 Calculating Molecular Weight and LogP features...")
+        data = data.copy()  # Avoid setting with copy warnings
         data[["MolWt", "LogP"]] = data["canonical_smiles"].apply(
             self._add_physical_descriptors
         )
@@ -44,11 +46,44 @@ class CatBoostDrugModel:
         y = data[target_name]
         return X, y
 
-    def split_dataset(self, X, y, test_size=0.2, random_state=42):
-        """Partitions data into training and validation subsets."""
-        return train_test_split(
-            X, y, test_size=test_size, random_state=random_state
+    def split_dataset(self, data, X, y, test_size=0.2):
+        """Partitions data into training and validation subsets using Bemis-Murcko Scaffolds."""
+        print("🧱 Applying Bemis-Murcko Scaffold Split...")
+        scaffold_sets = defaultdict(list)
+
+        # Group DataFrame indices by their unique ring architecture
+        for idx, smiles in zip(data.index, data["canonical_smiles"]):
+            try:
+                mol = Chem.MolFromSmiles(smiles)
+                scaffold = MurckoScaffold.MurckoScaffoldSmiles(
+                    mol=mol, includeChirality=False
+                )
+            except Exception:
+                scaffold = ""
+            scaffold_sets[scaffold].append(idx)
+
+        # Sort scaffolds by family group size descending
+        sorted_scaffold_sets = sorted(
+            scaffold_sets.values(), key=lambda x: len(x), reverse=True
         )
+
+        train_indices = []
+        test_indices = []
+        max_test_samples = int(len(data) * test_size)
+
+        # Distribute whole groups to prevent structural data leakage
+        for scaffold_indices in sorted_scaffold_sets:
+            if len(test_indices) + len(scaffold_indices) <= max_test_samples:
+                test_indices.extend(scaffold_indices)
+            else:
+                train_indices.extend(scaffold_indices)
+
+        # Slice the feature matrices using aligned scaffold splits
+        X_train, X_test = X.loc[train_indices], X.loc[test_indices]
+        y_train, y_test = y.loc[train_indices], y.loc[test_indices]
+
+        print(f"📊 Split complete -> Train: {X_train.shape[0]} | Test: {X_test.shape[0]}")
+        return X_train, X_test, y_train, y_test
 
     def train_model(self, X_train, y_train, X_test, y_test):
         """Configures and fits the CatBoost regressor with validation data monitoring."""
@@ -114,14 +149,16 @@ if __name__ == "__main__":
     print(f"📊 Dataset stats: {data.shape[0]} compounds generated.")
 
     X, y = drug_pipeline.create_feature_label(data, target_name="pIC50")
-    X_train, X_test, y_train, y_test = drug_pipeline.split_dataset(X, y)
+    
+    # Updated to pass 'data' so it splits cleanly by molecular architecture
+    X_train, X_test, y_train, y_test = drug_pipeline.split_dataset(data, X, y)
 
     # Fit the encapsulated regressor model
     model_instance = drug_pipeline.train_model(X_train, y_train, X_test, y_test)
 
     # Perform inference and generate figures
     predictions = model_instance.predict(X_test)
-    drug_pipeline.evaluate_and_plot(X_test, y_test, predictions)
+    drug_pipeline.evaluate_and_plot(y_test, predictions)
 
     # Save model weights to file
     drug_pipeline.save_model_artifact("catboost_egfr_model.cbm")
