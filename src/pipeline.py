@@ -8,6 +8,7 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from sklearn.metrics import mean_squared_error, r2_score
+from pathlib import Path
 
 
 class CatBoostDrugModel:
@@ -139,11 +140,15 @@ class CatBoostDrugModel:
 
 
 if __name__ == "__main__":
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    processed_data_path = str(BASE_DIR / "data" / "egfr_processed_data.csv")
+    model_output_path = str(BASE_DIR / "models" / "catboost_egfr_model.cbm")
+    
     # Initialize the OOP pipeline engine
     drug_pipeline = CatBoostDrugModel()
 
     # Pipeline execution flow
-    data = drug_pipeline.load_data("egfr_processed_data.csv")
+    data = drug_pipeline.load_data(processed_data_path)
     data = drug_pipeline.engineer_features(data)
 
     print(f"📊 Dataset stats: {data.shape[0]} compounds generated.")
@@ -161,4 +166,4 @@ if __name__ == "__main__":
     drug_pipeline.evaluate_and_plot(y_test, predictions)
 
     # Save model weights to file
-    drug_pipeline.save_model_artifact("catboost_egfr_model.cbm")
+    drug_pipeline.save_model_artifact(model_output_path)
