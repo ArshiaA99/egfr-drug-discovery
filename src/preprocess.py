@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
+from pathlib import Path
 
 
 class MolecularFeaturizer:
@@ -70,7 +71,12 @@ class MolecularFeaturizer:
 
 
 if __name__ == "__main__":
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
+    raw_data_path = str(BASE_DIR / "data" / "egfr_raw_data.csv")
+    processed_data_path = str(BASE_DIR / "data" / "egfr_processed_data.csv")
+    
     featurizer = MolecularFeaturizer(radius=2, n_bits=1024)
     featurizer.execute_pipeline(
-        input_path="egfr_raw_data.csv", output_path="egfr_processed_data.csv"
+        input_path=raw_data_path, output_path=processed_data_path
     )
